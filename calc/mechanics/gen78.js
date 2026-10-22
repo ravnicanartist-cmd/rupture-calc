@@ -168,7 +168,7 @@ function calculateSMSS(gen, attacker, defender, move, field) {
         move.priority = 1;
         desc.attackerAbility = attacker.ability;
     }
-    var isGhostRevealed = attacker.hasAbility('Scrappy') || field.defenderSide.isForesight;
+    var isGhostRevealed = attacker.hasAbility('Scrappy', "Mind's Eye") || field.defenderSide.isForesight;
     var type1Effectiveness = (0, util_2.getMoveEffectiveness)(gen, move, defender.types[0], isGhostRevealed, field.isGravity);
     var type2Effectiveness = defender.types[1]
         ? (0, util_2.getMoveEffectiveness)(gen, move, defender.types[1], isGhostRevealed, field.isGravity)
@@ -227,7 +227,9 @@ function calculateSMSS(gen, attacker, defender, move, field) {
     }
     if ((defender.hasAbility('Wonder Guard') && typeEffectiveness <= 1) ||
         (move.hasType('Grass') && defender.hasAbility('Sap Sipper')) ||
-        (move.hasType('Fire') && defender.hasAbility('Flash Fire')) ||
+        (move.hasType('Fire') && defender.hasAbility('Flash Fire', 'Well-Baked Body')) ||
+        (move.hasType('Ground') && defender.hasAbility('Earth Eater')) ||
+        (move.flags.wind && defender.hasAbility('Wind Rider')) ||
         (move.hasType('Water') && defender.hasAbility('Dry Skin', 'Storm Drain', 'Water Absorb')) ||
         (move.hasType('Electric') &&
             defender.hasAbility('Lightning Rod', 'Motor Drive', 'Volt Absorb')) ||
@@ -237,7 +239,7 @@ function calculateSMSS(gen, attacker, defender, move, field) {
             !(attacker.hasAbility('Bone Zone') && move.flags.bone)) ||
         (move.flags.bullet && defender.hasAbility('Bulletproof')) ||
         (move.flags.sound && !move.named('Clangorous Soul') && defender.hasAbility('Soundproof')) ||
-        (move.priority > 0 && defender.hasAbility('Queenly Majesty', 'Dazzling'))) {
+        (move.priority > 0 && defender.hasAbility('Queenly Majesty', 'Dazzling', 'Armor Tail'))) {
         desc.defenderAbility = defender.ability;
         return result;
     }
@@ -780,6 +782,14 @@ function calculateBPModsSMSS(gen, attacker, defender, move, field, desc, basePow
         bpMods.push(5325);
         desc.attackerAbility = attacker.ability;
     }
+    if (attacker.hasAbility('Sharpness') && RUPTURE_SLICING.indexOf(move.name) >= 0) {
+        bpMods.push(6144);
+        desc.attackerAbility = attacker.ability;
+    }
+    if (attacker.hasAbility('Wind Power', 'Electromorphosis') && attacker.abilityOn && move.hasType('Electric')) {
+        bpMods.push(8192);
+        desc.attackerAbility = attacker.ability;
+    }
     if (INC_EM && attacker.hasAbility("Power Fists") && move.flags.punch ||
         (attacker.hasAbility('Iron Fist') && move.flags.punch)) {
         bpMods.push(4915);
@@ -886,6 +896,20 @@ function calculateAttackSMSS(gen, attacker, defender, move, field, desc, isCriti
     return attack;
 }
 exports.calculateAttackSMSS = calculateAttackSMSS;
+
+// RUPTURE_ABILITIES
+// ---- Emerald Rupture: Gen 9 ability effects the base calc doesn't have ----------------------------
+var RUPTURE_SLICING = ["Cut", "Razor Leaf", "Slash", "Fury Cutter", "Air Cutter", "Aerial Ace", "Leaf Blade", "Night Slash", "Air Slash", "X-Scissor", "Psycho Cut", "Cross Poison", "Sacred Sword", "Razor Shell", "Secret Sword", "Solar Blade", "Behemoth Blade", "Power Shift", "Ceaseless Edge", "Population Bomb", "Kowtow Cleave", "Bitter Blade", "Aqua Cutter", "Psyblade", "Mighty Cleave", "Tachyon Cutter"];
+function ruptureBoostedStat(p, field) {
+    // Protosynthesis / Quark Drive: highest non-HP stat x1.3 while sun / Electric Terrain / Booster Energy / "ability on"
+    var on = p.abilityOn || p.hasItem('Booster Energy');
+    if (p.hasAbility('Protosynthesis') && !(on || field.hasWeather('Sun', 'Harsh Sunshine'))) return null;
+    if (p.hasAbility('Quark Drive') && !(on || field.hasTerrain('Electric'))) return null;
+    if (!p.hasAbility('Protosynthesis', 'Quark Drive')) return null;
+    var best = 'atk', stats = ['atk', 'def', 'spa', 'spd', 'spe'];
+    for (var i = 1; i < stats.length; i++) if (p.rawStats[stats[i]] > p.rawStats[best]) best = stats[i];
+    return best;
+}
 function calculateAtModsSMSS(gen, attacker, defender, move, field, desc) {
     var atMods = [];
     if ((attacker.hasAbility('Slow Start') && attacker.abilityOn &&
@@ -957,6 +981,29 @@ function calculateAtModsSMSS(gen, attacker, defender, move, field, desc) {
         atMods.push(8192);
         desc.attackerAbility = attacker.ability;
     }
+    var rupAtkStat = move.named('Body Press') ? 'def' : move.category === 'Special' ? 'spa' : 'atk';
+    if (ruptureBoostedStat(attacker, field) === rupAtkStat) {
+        atMods.push(5325);
+        desc.attackerAbility = attacker.ability;
+    }
+    if ((attacker.hasAbility('Orichalcum Pulse') && field.hasWeather('Sun', 'Harsh Sunshine') && move.category === 'Physical') ||
+        (attacker.hasAbility('Hadron Engine') && field.hasTerrain('Electric') && move.category === 'Special')) {
+        atMods.push(5461);
+        desc.attackerAbility = attacker.ability;
+    }
+    if (attacker.hasAbility('Supreme Overlord') && attacker.abilityOn) {
+        atMods.push(4506);
+        desc.attackerAbility = attacker.ability;
+    }
+    if (attacker.hasAbility('Rocky Payload') && move.hasType('Rock')) {
+        atMods.push(6144);
+        desc.attackerAbility = attacker.ability;
+    }
+    if ((defender.hasAbility('Tablets of Ruin') && move.category === 'Physical' && !attacker.hasAbility('Tablets of Ruin')) ||
+        (defender.hasAbility('Vessel of Ruin') && move.category === 'Special' && !attacker.hasAbility('Vessel of Ruin'))) {
+        atMods.push(3072);
+        desc.defenderAbility = defender.ability;
+    }
     if ((defender.hasAbility('Thick Fat') && move.hasType('Fire', 'Ice')) ||
         (defender.hasAbility('Water Bubble', 'Cash Splash') && move.hasType('Fire')) ||
         (defender.hasAbility('Water Compaction') && move.hasType('Water'))) {
@@ -1027,6 +1074,15 @@ function calculateDfModsSMSS(gen, attacker, defender, move, field, desc, isCriti
     if (isCritical === void 0) { isCritical = false; }
     if (hitsPhysical === void 0) { hitsPhysical = false; }
     var dfMods = [];
+    if (ruptureBoostedStat(defender, field) === (hitsPhysical ? 'def' : 'spd')) {
+        dfMods.push(5325);
+        desc.defenderAbility = defender.ability;
+    }
+    if ((attacker.hasAbility('Sword of Ruin') && hitsPhysical && !defender.hasAbility('Sword of Ruin')) ||
+        (attacker.hasAbility('Beads of Ruin') && !hitsPhysical && !defender.hasAbility('Beads of Ruin'))) {
+        dfMods.push(3072);
+        desc.attackerAbility = attacker.ability;
+    }
     if (defender.hasAbility('Marvel Scale') && defender.status && hitsPhysical) {
         dfMods.push(6144);
         desc.defenderAbility = defender.ability;
@@ -1069,6 +1125,10 @@ exports.calculateDfModsSMSS = calculateDfModsSMSS;
 function calculateFinalModsSMSS(gen, attacker, defender, move, field, desc, isCritical, typeEffectiveness) {
     if (isCritical === void 0) { isCritical = false; }
     var finalMods = [];
+    if (defender.hasAbility('Purifying Salt') && move.hasType('Ghost')) {
+        finalMods.push(2048);
+        desc.defenderAbility = defender.ability;
+    }
     if (field.defenderSide.isReflect && move.category === 'Physical' &&
         !isCritical && !field.defenderSide.isAuroraVeil) {
         finalMods.push(field.gameType !== 'Singles' ? 2732 : 2048);
