@@ -57,12 +57,13 @@
     const base = `trainers-${S.dir}-${S.diff}`;
     const [single, doubles] = await Promise.all([load(base + ".json"), S.dbl ? load(base + "-doubles.json") : Promise.resolve([])]);
     const dmap = {}; doubles.forEach(t => dmap[t.id] = t);
-    let html = `<p class="intro">Every trainer in story order, with exact levels, abilities, natures, held items and moves.
+    let html = `<p class="intro">Every trainer in the order you meet them, with exact levels, abilities, natures, held items and moves.
       <b>${S.dir === "rewind" ? "Rewind" : "Forward"}</b> bosses, <b>${S.diff === "hard" ? "Hard" : "Normal"}</b>, <b>${S.dbl ? "Doubles mode" : "single battles"}</b>.
       Easy isn't listed separately: it uses the Normal teams a few levels lower, with simpler AI. Calc opens the damage calculator with that Pokémon loaded; use its Read .sav button to bring in your own team.</p>`;
-    let lastLoc = null;
+    let lastLoc = null, lastPh = null;
     single.forEach((t0, i) => {
       const t = dmap[t0.id] ? Object.assign({}, t0, { team: dmap[t0.id].team, dteam: true }) : t0;
+      if (t.ph !== lastPh) { html += `<h2 class="ph">${esc(t.ph)}</h2>`; lastPh = t.ph; lastLoc = null; }
       if (t.loc !== lastLoc) { html += `<h3 class="sec" data-loc="${esc(t.loc)}">${esc(t.loc)}</h3>`; lastLoc = t.loc; }
       const text = [t.t, t.loc, t.cls].concat(t.team.map(m => m.s)).join(" ").toLowerCase();
       html += `<section class="tr ${t.boss ? "boss" : ""}" data-boss="${t.boss ? 1 : 0}" data-text="${esc(text)}" data-loc="${esc(t.loc)}">

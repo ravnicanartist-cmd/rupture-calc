@@ -62,3 +62,4 @@ tr.g td { background: #1e3325; } tr.c td { background: #33291c; } tr.w td { back
   .bar { padding: 8px 12px; gap: 8px; } nav a { padding: 4px 6px; font-size: 13px; }
   main { padding: 12px; } .team { grid-template-columns: 1fr; }
 }
+h2.ph { margin: 28px 0 4px; font-size: 20px; color: var(--accent2); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
