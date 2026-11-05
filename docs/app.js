@@ -165,6 +165,28 @@
 
   // ---------------------------------------------------------------- shell
   const PAGES = { trainers, pokedex, moves, encounters, tms, items, abilities, changes };
+  // each location heading and what follows it become one collapsible group
+  function groupSections() {
+    const main = $("#main");
+    main.querySelectorAll("h3.sec").forEach(h => {
+      const d = document.createElement("details");
+      d.className = "grp";
+      d.open = page !== "encounters";
+      const sum = document.createElement("summary");
+      sum.innerHTML = h.innerHTML;
+      d.appendChild(sum);
+      let el = h.nextElementSibling;
+      while (el && !(el.tagName === "H3" || el.tagName === "H2")) {
+        const nx = el.nextElementSibling; d.appendChild(el); el = nx;
+      }
+      h.replaceWith(d);
+    });
+    if (main.querySelector("details.grp")) {
+      main.insertAdjacentHTML("afterbegin", '<p class="fold"><button data-f="1">Expand all</button> <button data-f="0">Collapse all</button></p>');
+      main.querySelectorAll(".fold button").forEach(b => b.onclick = () =>
+        main.querySelectorAll("details.grp").forEach(d => { if (d.style.display !== "none") d.open = b.dataset.f === "1"; }));
+    }
+  }
   function filter() {
     const q = $("#q").value.trim().toLowerCase();
     const main = $("#main");
@@ -173,14 +195,11 @@
       el.style.display = hide ? "none" : "";
       if (hide && el.nextElementSibling && el.nextElementSibling.classList.contains("det")) el.nextElementSibling.remove();
     });
-    // hide section headings with nothing visible under them
-    main.querySelectorAll("h3.sec[data-loc]").forEach(h => {
-      let el = h.nextElementSibling, any = false;
-      while (el && !(el.tagName === "H3")) {
-        if (el.matches("[data-text]") ? el.style.display !== "none" : el.querySelector("[data-text]:not([style*='none'])")) { any = true; break; }
-        el = el.nextElementSibling;
-      }
-      h.style.display = any ? "" : "none";
+    // hide groups with nothing visible; open the ones with search matches
+    main.querySelectorAll("details.grp").forEach(d => {
+      const any = !!d.querySelector("[data-text]:not([style*='none'])");
+      d.style.display = any ? "" : "none";
+      if (q && any) d.open = true;
     });
   }
   async function show() {
@@ -193,6 +212,7 @@
     $("#main").innerHTML = '<p class="muted">Loading…</p>';
     try {
       $("#main").innerHTML = await PAGES[page]();
+      groupSections();
       rendered = key;
       filter();
     } catch (e) {
