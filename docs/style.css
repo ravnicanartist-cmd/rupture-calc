@@ -110,3 +110,6 @@ ul.ml { margin: 6px 0 0; padding-left: 18px; } ul.ml li { margin: 0 0 4px; }
 .savebtn input { display: none; }
 .note { color: var(--accent2); font-size: 13px; margin: 6px 0; }
 .tag.over { background: #8a3a38; } .tag.nz-free { background: #2f6f3f; } .tag.nz-dupe, .tag.nz-used { background: #4a4f5a; } .tag.nz-gift { background: #5a4a23; }
+.bosspick button.done { opacity: .6; }
+.bosspick button.g-villain { border-color: #6b3a4f; } .bosspick button.g-rival { border-color: #3a5a6b; }
+.tabs { margin-bottom: 8px; }

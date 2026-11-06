@@ -23,7 +23,8 @@
   const load = f => cache[f] || (cache[f] = fetch("data/" + f).then(r => { if (!r.ok) throw new Error(f + ": " + r.status); return r.json(); }));
 
   const S = { dir: store.get("dir", "forward"), diff: store.get("diff", "normal"), dbl: store.get("dbl", false), bosses: store.get("bosses", false),
-    boss: store.get("boss", 0), show: store.get("show", "all"), boxes: store.get("boxes", false) };
+    boss: store.get("boss", 0), sel: store.get("sel", null), tab: store.get("tab", "main"), rival: store.get("rival", "Cheren"),
+    starter: store.get("starter", "Tadbulb"), show: store.get("show", "all"), boxes: store.get("boxes", false) };
   let page = "trainers", rendered = null;
 
   function seg(key, opts, label) {
@@ -173,6 +174,39 @@
   // Data: prep-<dir>-<diff>.json from tools/gen5/balance_check.py --site. Each matchup cell:
   // [you win 1-on-1, your best move, its min %, max %, their best move, its min %, max %, you move first]
   let MINE = new Set(store.get("mine", []));
+  // prep-<dir>-<diff>.json: {pools: {"stage|cap": [Pokémon]}, bosses: [{..., pk, pool: [{i, m, top}]}]}
+  const PREP = {};
+  async function loadPrep() {
+    const f = `prep-${S.dir}-${S.diff}.json`;
+    if (!PREP[f]) {
+      const d = await load(f);
+      PREP[f] = d.bosses.map(e => Object.assign({}, e, { pool: e.pool.map(x => Object.assign({}, d.pools[e.pk][x.i], x)) }))
+        .sort((a, b) => a.ord - b.ord);
+    }
+    return PREP[f];
+  }
+  const TABS = [["main", "Gyms & League"], ["villain", "Villains"], ["rival", "Rivals & required trainers"], ["all", "Everything, in story order"]];
+  const inTab = e => S.tab === "all" || (S.tab === "main" ? e.group === "gym" : e.group === S.tab);
+  const keyOf = e => e.vgroup ? "vg:" + e.vgroup : e.id;
+  function pickVariant(list) {
+    return list.find(e => e.vrival === S.rival && e.vstarter === S.starter) || list.find(e => e.vstarter === S.starter) || list[0];
+  }
+  function buttons(all) {   // one per fight; Cheren/Bianca's six versions share one
+    const seen = new Set(), out = [];
+    all.filter(inTab).forEach(e => { const k = keyOf(e); if (!seen.has(k)) { seen.add(k); out.push(e); } });
+    return out;
+  }
+  function resolve(all, key) {
+    const list = key && key.startsWith("vg:") ? all.filter(e => keyOf(e) === key) : all.filter(e => e.id === key);
+    return list.length ? (list[0].vgroup ? pickVariant(list) : list[0]) : null;
+  }
+  const beaten = e => !!(SAVE && SAVE.info.defeated && SAVE.info.defeated.includes(e.n));
+  function storyLabel(x) {
+    if (x.group === "gym") return BOSS_SHORT(x);
+    if (x.vgroup) return x.vgroup.replace("Cheren/Bianca · ", "Cheren/Bianca · ").split(" (")[0];
+    const name = x.t.replace(/^(Rival|Elite Trainer) /, "").split(/[,(]/)[0].trim(), fight = (x.t.match(/fight (\d)/) || [])[1];
+    return fight ? `${name} ${fight}` : `${name} · ${x.loc.split(/[,(]/)[0].trim()}`;
+  }
   const BOSS_SHORT = x => { const nm = x.t.replace(/^(Gym \d: |Leader |Elite Four:? |Champion )/, "").split(/[ (,]/)[0];
     return (x.stage.startsWith("Gym") ? x.stage : /Champion/.test(x.t) ? "Champion" : "E4") + " · " + nm; };
   function prepCalc(e, r, j) {
@@ -180,7 +214,7 @@
     return calcLink(e.team[j].c) + `&me=${encodeURIComponent(CN[r.s] || r.s)}&lv=${e.cap}&mv=${encodeURIComponent(own.join(","))}`;
   }
   // ---- your save (read in the browser; nothing is uploaded) and the same 1-on-1 model as the data files
-  let SAVE = store.get("save", null), META = null;
+  let SAVE = store.get("save", null), META = null, CUR = null;
   const KEYS = ["hp", "at", "df", "sa", "sd", "sp"], IVKEYS = ["hp", "at", "df", "sp", "sa", "sd"];   // the reader's IV order
   function statsOf(bs, lv, ivs, evs, nature) {
     const up = (META.natures[nature] || [])[0], down = (META.natures[nature] || [])[1], st = {};
@@ -262,7 +296,10 @@
     store.set("save", SAVE);
     S.dir = res.info.rewind ? "rewind" : "forward"; store.set("dir", S.dir);
     S.diff = res.info.difficulty === "hard" ? "hard" : "normal"; store.set("diff", S.diff);
-    S.boss = nextBoss(res.info); store.set("boss", S.boss);
+    S.rival = res.info.gender ? "Cheren" : "Bianca"; store.set("rival", S.rival);   // a boy faces Bianca, a girl Cheren
+    const st = ["Tadbulb", "Tandemaus", "Fidough"].find(n => META && famOf(n).some(x => res.info.caught.includes(x)));
+    if (st) { S.starter = st; store.set("starter", S.starter); }
+    S.sel = null; store.set("sel", null);   // the page picks your next fight
   }
 
   const isMine = r => r.from.some(f => MINE.has(f)) || (SAVE && famOf(r.s).some(n => OWNED.has(n)));
@@ -276,14 +313,25 @@
   }
   async function prep() {
     await calcNames();
-    const [all, meta] = await Promise.all([load(`prep-${S.dir}-${S.diff}.json`), load("prep-meta.json")]);
+    const [all, meta] = await Promise.all([loadPrep(), load("prep-meta.json")]);
     META = meta; OWNED = ownedNat();
-    const bi = Math.min(+S.boss || 0, all.length - 1), e = all[bi];
+    const btns = buttons(all);
+    let e = S.sel && btns.some(b => keyOf(b) === S.sel) ? resolve(all, S.sel) : null;
+    if (!e) {   // first fight in this tab you haven't won yet (with a save), else the first one
+      const b = (SAVE && btns.find(x => !(x.vgroup ? all.filter(y => keyOf(y) === keyOf(x)).some(beaten) : beaten(x)))) || btns[0];
+      e = resolve(all, keyOf(b));
+    }
+    CUR = e;
     const n = e.pool.length, team = e.team;
     let html = `<p class="intro">Pick the next boss, or read your save. This page lists every Pokémon you could have by then (caught in the areas you can reach, evolved by level up to the cap, with its level-up moves and the TMs you can have by then) and works out who wins each 1-on-1 at the level cap. Tap ☆ on Pokémon you've caught, or read your save, to see how your team lines up.</p>
-      ${saveBar(e)}<div class="bosspick">` + all.map((x, i) => `<button data-b="${i}" class="${i === bi ? "on" : ""}">${esc(BOSS_SHORT(x))}</button>`).join("") + `</div>`;
+      ${saveBar(e)}<div class="prepf tabs">` + TABS.map(([k, t]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${t}</button>`).join("") + `</div>
+      <div class="bosspick">` + btns.map(x => { const k = keyOf(x), won = x.vgroup ? all.filter(y => keyOf(y) === k).some(beaten) : beaten(x);
+        return `<button data-k="${esc(k)}" class="${k === keyOf(e) ? "on" : ""} ${won ? "done" : ""} g-${x.group}" title="${esc(x.t + " · " + x.loc)}">${won ? "✓ " : ""}${esc(storyLabel(x))}</button>`; }).join("") + `</div>`;
+    if (e.vgroup) html += `<p class="prepf">Rival: ${["Cheren", "Bianca"].map(v => `<button data-rival="${v}" class="${e.vrival === v ? "on" : ""}">${v}${v === "Cheren" ? " (you're a girl)" : " (you're a boy)"}</button>`).join("")}
+      &nbsp; Your starter: ${["Tadbulb", "Tandemaus", "Fidough"].map(v => `<button data-starter="${v}" class="${e.vstarter === v ? "on" : ""}">${v}</button>`).join("")}</p>`;
     html += `<div class="prephead"><b>${esc(e.t)}</b> <span class="muted">${esc(e.loc)} · level cap ${e.cap} · ${n} Pokémon you could have</span>
-      ${e.items_used ? `<span class="tag it">${esc(e.items_used)}</span>` : ""}${e.dbl ? '<span class="tag dbl">Double battle: matchups below are still 1-on-1</span>' : ""}</div>`;
+      ${e.items_used ? `<span class="tag it">${esc(e.items_used)}</span>` : ""}${e.dbl || /multi battle/.test(e.loc) ? `<span class="tag dbl">${/multi battle/.test(e.loc) ? "Multi battle" : "Double battle"}: matchups below are still 1-on-1</span>` : ""}
+      ${e.group !== "gym" ? `<span class="muted">· your level cap here is the next gym's</span>` : ""}</div>`;
     // boss team with how many of your options beat each
     html += `<div class="team">` + team.map((m, j) => {
       const k = e.pool.filter(r => r.m[j][0]).length, pct = Math.round(k / n * 100);
@@ -294,7 +342,7 @@
     if (SAVE) {
       const bosses = team.map(bossMon);
       const list = SAVE.party.concat(S.boxes ? [].concat(...SAVE.boxes) : []);
-      html += `<h3 class="sec">Your Pokémon vs ${esc(BOSS_SHORT(e))} (from your save)</h3>
+      html += `<h3 class="sec">Your Pokémon vs ${esc(storyLabel(e))} (from your save)</h3>
         <p class="prepf"><label class="chk"><input type="checkbox" id="prepboxes" ${S.boxes ? "checked" : ""}> Include the PC boxes</label>
         <span class="muted">Your real levels, natures, IVs, abilities, items and moves. ✓ = wins 1-on-1.</span></p>`;
       html += `<div class="wrap"><table class="prep mine"><thead><tr><th>Pokémon</th><th class="n">Wins</th>` +
@@ -319,7 +367,7 @@
     }
     // your team (stars)
     const mine = e.pool.filter(isMine);
-    html += `<h3 class="sec">${SAVE ? "Your species at their best" : "Your team"} vs ${esc(BOSS_SHORT(e))}</h3>`;
+    html += `<h3 class="sec">${SAVE ? "Your species at their best" : "Your team"} vs ${esc(storyLabel(e))}</h3>`;
     if (SAVE) html += `<p class="muted">Each species you own (★), as it would be at the level cap with the moves it can have by now.</p>`;
     if (!mine.length) html += `<p class="muted">Tap ☆ next to Pokémon you've caught (in the list below). Your picks are remembered on this device and carry over to every boss, evolved to what they'd be by then.</p>`;
     else html += `<div class="cover">` + team.map((m, j) => {
@@ -384,7 +432,12 @@
       store.set("mine", [...MINE]); rendered = null; const y = scrollY; show().then(() => scrollTo(0, y)); return true;
     }
     const b = ev.target.closest(".bosspick button");
-    if (b) { S.boss = +b.dataset.b; store.set("boss", S.boss); rendered = null; show(); return true; }
+    if (b) { S.sel = b.dataset.k; store.set("sel", S.sel); rendered = null; show(); return true; }
+    const tb = ev.target.closest(".tabs button");
+    if (tb) { S.tab = tb.dataset.tab; store.set("tab", S.tab); rendered = null; show(); return true; }
+    const rv = ev.target.closest("[data-rival]"), sv = ev.target.closest("[data-starter]");
+    if (rv || sv) { if (rv) { S.rival = rv.dataset.rival; store.set("rival", S.rival); } else { S.starter = sv.dataset.starter; store.set("starter", S.starter); }
+      rendered = null; const y = scrollY; show().then(() => scrollTo(0, y)); return true; }
     const sh = ev.target.closest(".prepf button");
     if (sh) { S.show = sh.dataset.show; store.set("show", S.show); rendered = null; const y = scrollY; show().then(() => scrollTo(0, y)); return true; }
     const tr = ev.target.closest("tr.pr");
@@ -394,8 +447,8 @@
   function prepDetail(tr) {
     const next = tr.nextElementSibling;
     if (next && next.classList.contains("det")) { next.remove(); return; }
-    load(`prep-${S.dir}-${S.diff}.json`).then(all => {
-      const e = all[Math.min(+S.boss || 0, all.length - 1)], r = e.pool[+tr.dataset.i];
+    Promise.resolve(CUR).then(e => {
+      const r = e.pool[+tr.dataset.i];
       const lines = e.team.map((m, j) => { const c = r.m[j];
         return `<li><b>${c[0] ? "✓" : "✗"} vs ${esc(m.s)}</b>: ${c[7] ? "you move first" : "it moves first"}. ${c[1] ? `Your ${esc(c[1])} does ${c[2]}–${c[3]}%` : "You have no damaging move that hits it"}${c[4] ? `; its ${esc(c[4])} does ${c[5]}–${c[6]}% to you.` : "; it can't damage you."}
           <a href="${prepCalc(e, r, j)}" target="_blank" rel="noopener">Calc ↗</a></li>`; }).join("");

@@ -141,7 +141,10 @@
             const used = fixed ? (v(V.AREAS + ((a - 1) >> 4)) >> ((a - 1) & 15)) & 1 : (a <= 65 ? flag(F.OLD_AREAS + a - 1) : 0);
             if (used) areas.push(a);
         }
-        return { name, badges, nBadges: badges.reduce((x, y) => x + y, 0), e4: F.E4.map(flag), gameClear: !!flag(F.GAME_CLEAR),
+        const defeated = [];   // trainer ids whose "beaten" flag is set (flag 0x500 + id)
+        for (let t = 1; t < 973; t++) if (flag(0x500 + t)) defeated.push(t);
+        const gender = secs[0] !== undefined ? dv.getUint8(secs[0] + 8) : 0;   // 0 boy, 1 girl
+        return { name, gender, defeated, badges, nBadges: badges.reduce((x, y) => x + y, 0), e4: F.E4.map(flag), gameClear: !!flag(F.GAME_CLEAR),
                  rewind: !!flag(F.REWIND), doubles: !!flag(F.DOUBLES), capsOff: !!flag(F.CAPS_OFF),
                  difficulty: ["normal", "easy", "hard"][v(V.DIFFICULTY)] || "normal", nuzlocke: v(V.NUZLOCKE),
                  areasUsed: areas, areasExact: fixed, caught };
