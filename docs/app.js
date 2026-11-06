@@ -22,7 +22,8 @@
   const cache = {};
   const load = f => cache[f] || (cache[f] = fetch("data/" + f).then(r => { if (!r.ok) throw new Error(f + ": " + r.status); return r.json(); }));
 
-  const S = { dir: store.get("dir", "forward"), diff: store.get("diff", "normal"), dbl: store.get("dbl", false), bosses: store.get("bosses", false) };
+  const S = { dir: store.get("dir", "forward"), diff: store.get("diff", "normal"), dbl: store.get("dbl", false), bosses: store.get("bosses", false),
+    boss: store.get("boss", 0), show: store.get("show", "all") };
   let page = "trainers", rendered = null;
 
   function seg(key, opts, label) {
@@ -30,6 +31,11 @@
   }
   function options() {
     const o = $("#opts");
+    if (page === "prep") {
+      o.innerHTML = seg("dir", [["forward", "Forward"], ["rewind", "Rewind"]], "Bosses direction") + seg("diff", [["normal", "Normal"], ["hard", "Hard"]], "Difficulty");
+      o.querySelectorAll("button").forEach(b => b.onclick = () => { S[b.dataset.k] = b.dataset.v; store.set(b.dataset.k, b.dataset.v); options(); show(); });
+      return;
+    }
     if (page !== "trainers") { o.innerHTML = ""; return; }
     o.innerHTML = seg("dir", [["forward", "Forward"], ["rewind", "Rewind"]], "Bosses direction") +
       seg("diff", [["normal", "Normal"], ["hard", "Hard"]], "Difficulty") +
@@ -163,8 +169,105 @@
     return html;
   }
 
+  // ---------------------------------------------------------------- boss prep
+  // Data: prep-<dir>-<diff>.json from tools/gen5/balance_check.py --site. Each matchup cell:
+  // [you win 1-on-1, your best move, its min %, max %, their best move, its min %, max %, you move first]
+  let MINE = new Set(store.get("mine", []));
+  const BOSS_SHORT = x => { const nm = x.t.replace(/^(Gym \d: |Leader |Elite Four:? |Champion )/, "").split(/[ (,]/)[0];
+    return (x.stage.startsWith("Gym") ? x.stage : /Champion/.test(x.t) ? "Champion" : "E4") + " · " + nm; };
+  function prepCalc(e, r, j) {
+    const own = [r.m[j][1]].concat(r.top || []).filter((m, i, a) => m && a.indexOf(m) === i).slice(0, 4);
+    return calcLink(e.team[j].c) + `&me=${encodeURIComponent(CN[r.s] || r.s)}&lv=${e.cap}&mv=${encodeURIComponent(own.join(","))}`;
+  }
+  const isMine = r => r.from.some(f => MINE.has(f));
+  async function prep() {
+    await calcNames();
+    const all = await load(`prep-${S.dir}-${S.diff}.json`);
+    const bi = Math.min(+S.boss || 0, all.length - 1), e = all[bi];
+    const n = e.pool.length, team = e.team;
+    let html = `<p class="intro">Pick the next boss. This page lists every Pokémon you could have by then (caught in the areas you can reach, evolved by level up to the cap, with its level-up moves and the TMs you can have by then) and works out who wins each 1-on-1 at the level cap. Tap ☆ on Pokémon you've caught to see how your team lines up.</p>
+      <div class="bosspick">` + all.map((x, i) => `<button data-b="${i}" class="${i === bi ? "on" : ""}">${esc(BOSS_SHORT(x))}</button>`).join("") + `</div>`;
+    html += `<div class="prephead"><b>${esc(e.t)}</b> <span class="muted">${esc(e.loc)} · level cap ${e.cap} · ${n} Pokémon you could have</span>
+      ${e.items_used ? `<span class="tag it">${esc(e.items_used)}</span>` : ""}${e.dbl ? '<span class="tag dbl">Double battle: matchups below are still 1-on-1</span>' : ""}</div>`;
+    // boss team with how many of your options beat each
+    html += `<div class="team">` + team.map((m, j) => {
+      const k = e.pool.filter(r => r.m[j][0]).length, pct = Math.round(k / n * 100);
+      return monCard(m).replace('<a class="calc"', `<div class="beat"><div class="barw"><div class="fill ${pct < 20 ? "lo" : pct < 40 ? "mid" : ""}" style="width:${pct}%"></div></div>
+        <span>${k} of ${n} beat it</span></div><a class="calc"`);
+    }).join("") + `</div>`;
+    // your team
+    const mine = e.pool.filter(isMine);
+    html += `<h3 class="sec">Your team vs ${esc(BOSS_SHORT(e))}</h3>`;
+    if (!mine.length) html += `<p class="muted">Tap ☆ next to Pokémon you've caught (in the list below). Your picks are remembered on this device and carry over to every boss, evolved to what they'd be by then.</p>`;
+    else html += `<div class="cover">` + team.map((m, j) => {
+      const w = mine.filter(r => r.m[j][0]);
+      return `<div class="cv ${w.length ? "" : "gap"}">${spr(m.s)}<div><b>${esc(m.s)}</b> <span class="muted">Lv ${m.l}</span><br>${w.length
+        ? w.map(r => `<a href="${prepCalc(e, r, j)}" target="_blank" rel="noopener">${esc(r.s)}</a> <span class="muted">(${esc(r.m[j][1])})</span>`).join(", ")
+        : "<span class='bad'>Nothing on your team wins this 1-on-1</span>" + (() => { const alt = e.pool.filter(r => r.m[j][0] && !isMine(r)).slice(0, 3);
+          return alt.length ? `<br><span class="muted">Options: ${alt.map(r => esc(r.s) + " (" + esc(r.where[0] || "") + ")").join(", ")}</span>` : ""; })()}</div></div>`;
+    }).join("") + `</div>`;
+    // matchup table
+    html += `<h3 class="sec">Every Pokémon you could have</h3>
+      <p class="prepf">${[["all", "All"], ["mine", "Only mine"], ["new", "New since the last boss"]].map(([v, t]) =>
+        `<button data-show="${v}" class="${S.show === v ? "on" : ""}">${t}</button>`).join("")}
+      <span class="muted">✓ = wins 1-on-1. Each cell: your best move and its damage, then their best hit on you. Tap a row for details.</span></p>`;
+    html += `<div class="wrap"><table class="prep"><thead><tr><th></th><th>Pokémon</th><th class="n">Wins</th>` +
+      team.map(m => `<th class="bm">${spr(m.s)}<br>${esc(m.s)} ${m.l}</th>`).join("") + `</tr></thead><tbody>`;
+    e.pool.forEach((r, i) => {
+      const wins = r.m.reduce((a, c) => a + c[0], 0), mineR = isMine(r);
+      const show = S.show === "all" || (S.show === "mine" && mineR) || (S.show === "new" && r.new);
+      if (!show) return;
+      html += `<tr class="pr" data-i="${i}" data-text="${esc([r.s].concat(r.from, r.types, r.where).join(" ").toLowerCase())}">
+        <td><button class="star ${mineR ? "on" : ""}" data-f="${esc(r.from.join("|"))}" title="I have this">${mineR ? "★" : "☆"}</button></td>
+        <td class="pk">${spr(r.s)}<div><b>${esc(r.s)}</b>${r.new ? ' <span class="tag new">New</span>' : ""}<br>${r.types.map(type).join("")}
+          <br><span class="muted">${esc(r.from.join(" / ") !== r.s ? "from " + r.from.join(" / ") + " · " : "")}${esc(r.where.join("; "))}</span></div></td>
+        <td class="n"><b>${wins}</b>/${team.length}</td>` +
+        r.m.map((c, j) => `<td class="mu ${c[0] ? "w" : "l"}"><a href="${prepCalc(e, r, j)}" target="_blank" rel="noopener" title="Open in the calc">${c[0] ? "✓" : "✗"}</a>
+          <span>${esc(c[1] || "—")} ${c[1] ? c[2] + "–" + c[3] + "%" : ""}</span><span class="muted">takes ${c[4] ? c[5] + "–" + c[6] + "%" : "nothing"}</span></td>`).join("") + `</tr>`;
+    });
+    html += `</tbody></table></div>`;
+    // supplies
+    if (e.tms.length) html += `<h3 class="sec">TMs you can get since the last boss</h3>` + table(["TM", "Move", "Where"],
+      e.tms.map(x => ({ text: [x.no, x.move].concat(x.where).join(" "), cells: [{ h: `<b>${esc(x.no)}</b>` }, x.move, x.where.join(", ")] })));
+    if (e.items.length) html += `<h3 class="sec">Items you can find since the last boss</h3>` + table(["Item", "Where"],
+      e.items.map(x => ({ text: [x.name].concat(x.where).join(" "), cells: [{ h: `<b>${esc(x.name)}</b>` }, x.where.join("; ")] })));
+    html += `<h3 class="sec">How this is worked out</h3><p class="intro">Your Pokémon are at the level cap with average IVs (15), a neutral nature, their first ability, no held item and no stat boosts.
+      Each side uses its strongest damaging move every turn (STAB, type matchups, the boss's held item and abilities such as Intimidate, Technician, Levitate and the type-absorbing ones are counted).
+      The faster Pokémon hits first; you "win" if you knock it out before it knocks you out. Status moves, setup, switching, crits, accuracy, weather and the AI's choices aren't modelled,
+      so treat ✓ as "a good matchup", not a guaranteed win, and check close ones in the calc. Areas reached: ${esc(e.new_areas.join(", "))}.</p>`;
+    return html;
+  }
+  function prepClick(ev) {
+    const st = ev.target.closest(".star");
+    if (st) {
+      ev.stopPropagation();
+      const f = st.dataset.f.split("|"), on = !f.some(x => MINE.has(x));
+      f.forEach(x => on ? MINE.add(x) : MINE.delete(x));
+      store.set("mine", [...MINE]); rendered = null; const y = scrollY; show().then(() => scrollTo(0, y)); return true;
+    }
+    const b = ev.target.closest(".bosspick button");
+    if (b) { S.boss = +b.dataset.b; store.set("boss", S.boss); rendered = null; show(); return true; }
+    const sh = ev.target.closest(".prepf button");
+    if (sh) { S.show = sh.dataset.show; store.set("show", S.show); rendered = null; const y = scrollY; show().then(() => scrollTo(0, y)); return true; }
+    const tr = ev.target.closest("tr.pr");
+    if (tr && !ev.target.closest("a")) { prepDetail(tr); return true; }
+    return false;
+  }
+  function prepDetail(tr) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains("det")) { next.remove(); return; }
+    load(`prep-${S.dir}-${S.diff}.json`).then(all => {
+      const e = all[Math.min(+S.boss || 0, all.length - 1)], r = e.pool[+tr.dataset.i];
+      const lines = e.team.map((m, j) => { const c = r.m[j];
+        return `<li><b>${c[0] ? "✓" : "✗"} vs ${esc(m.s)}</b>: ${c[7] ? "you move first" : "it moves first"}. ${c[1] ? `Your ${esc(c[1])} does ${c[2]}–${c[3]}%` : "You have no damaging move that hits it"}${c[4] ? `; its ${esc(c[4])} does ${c[5]}–${c[6]}% to you.` : "; it can't damage you."}
+          <a href="${prepCalc(e, r, j)}" target="_blank" rel="noopener">Calc ↗</a></li>`; }).join("");
+      tr.insertAdjacentHTML("afterend", `<tr class="det"><td colspan="${3 + e.team.length}"><div class="cols"><div><b>Matchups</b><ul class="ml">${lines}</ul></div>
+        <div><b>Moves counted</b> <span class="muted">(${esc(r.ab)})</span><br>${r.moves.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div></div></td></tr>`);
+    });
+  }
+
   // ---------------------------------------------------------------- shell
-  const PAGES = { trainers, pokedex, moves, encounters, tms, items, abilities, changes };
+  const PAGES = { trainers, prep, pokedex, moves, encounters, tms, items, abilities, changes };
   // each location heading and what follows it become one collapsible group
   function groupSections() {
     const main = $("#main");
@@ -197,7 +300,7 @@
     });
     // hide groups with nothing visible; open the ones with search matches
     main.querySelectorAll("details.grp").forEach(d => {
-      const any = !!d.querySelector("[data-text]:not([style*='none'])");
+      const any = !!d.querySelector("[data-text]:not([style*='none'])") || (!q && !d.querySelector("[data-text]"));
       d.style.display = any ? "" : "none";
       if (q && any) d.open = true;
     });
@@ -219,7 +322,7 @@
       $("#main").innerHTML = `<p>Couldn't load this section (${esc(e.message)}). Check your connection and reload.</p>`;
     }
   }
-  $("#main").addEventListener("click", e => { const tr = e.target.closest(".dex tr.row"); if (tr) dexDetail(tr); });
+  $("#main").addEventListener("click", e => { if (page === "prep" && prepClick(e)) return; const tr = e.target.closest(".dex tr.row"); if (tr) dexDetail(tr); });
   let t; $("#q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(filter, 150); });
   window.addEventListener("hashchange", () => { $("#q").value = ""; show(); });
   load("info.json").then(i => { $("#ver").textContent = i.version; document.title = `Emerald Rupture ${i.version} Docs`; }).catch(() => {});
