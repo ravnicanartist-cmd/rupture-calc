@@ -115,6 +115,38 @@
         return t + "\n";
     }
 
+    // Story progress and modes, for the docs site's Boss Prep page. Offsets are for Emerald Rupture 2.9+
+    // (SaveBlock1: flags at 0x1270, vars right after, Pokedex caught flags at 0x3645).
+    const SB1_FLAGS = 0x1270, SB1_VARS = 0x1270 + 314, SB1_DEX_CAUGHT = 0x3645, DEX_BYTES = 129;
+    const F = { BADGE1: 2260, GAME_CLEAR: 2257, E4: [1275, 1276, 1277, 1278], REWIND: 0x2A9, DOUBLES: 71, CAPS_OFF: 66, OLD_AREAS: 0x265 };
+    const V = { DIFFICULTY: 0x409B, NUZLOCKE: 0x409D, AREAS: 0x40FA, SAVE_FIX: 0x40FF };
+    const CHARS = {};
+    for (let i = 0; i < 26; i++) { CHARS[0xBB + i] = String.fromCharCode(65 + i); CHARS[0xD5 + i] = String.fromCharCode(97 + i); }
+    for (let i = 0; i < 10; i++) CHARS[0xA1 + i] = String(i);
+    CHARS[0] = " "; CHARS[0xAD] = "."; CHARS[0xAE] = "-";
+    function readInfo(dv, secs, sb1) {
+        const flag = n => (sb1.getUint8(SB1_FLAGS + (n >> 3)) >> (n & 7)) & 1;
+        const v = n => sb1.getUint16(SB1_VARS + (n - 0x4000) * 2, true);
+        let name = "";
+        if (secs[0] !== undefined) {
+            for (let i = 0; i < 7; i++) { const c = dv.getUint8(secs[0] + i); if (c === 0xFF) break; name += CHARS[c] || "?"; }
+        }
+        const badges = [];
+        for (let i = 0; i < 8; i++) badges.push(flag(F.BADGE1 + i));
+        const caught = [];
+        for (let n = 1; n < DEX_BYTES * 8; n++) if ((sb1.getUint8(SB1_DEX_CAUGHT + ((n - 1) >> 3)) >> ((n - 1) & 7)) & 1) caught.push(n);
+        // Nuzlocke areas: 2.9.1 keeps them in vars; a 2.9 save still has them in the old flags (which other flags shared)
+        const fixed = v(V.SAVE_FIX) >= 1, areas = [];
+        for (let a = 1; a <= 80; a++) {
+            const used = fixed ? (v(V.AREAS + ((a - 1) >> 4)) >> ((a - 1) & 15)) & 1 : (a <= 65 ? flag(F.OLD_AREAS + a - 1) : 0);
+            if (used) areas.push(a);
+        }
+        return { name, badges, nBadges: badges.reduce((x, y) => x + y, 0), e4: F.E4.map(flag), gameClear: !!flag(F.GAME_CLEAR),
+                 rewind: !!flag(F.REWIND), doubles: !!flag(F.DOUBLES), capsOff: !!flag(F.CAPS_OFF),
+                 difficulty: ["normal", "easy", "hard"][v(V.DIFFICULTY)] || "normal", nuzlocke: v(V.NUZLOCKE),
+                 areasUsed: areas, areasExact: fixed, caught };
+    }
+
     window.readRuptureSave = function (buffer, evsOn) {
         const dv = new DataView(buffer);
         const s = readSlot(dv);
@@ -138,6 +170,7 @@
             }
             out.boxes.push(box);
         }
+        out.info = readInfo(dv, s.secs, sb1);
         out.text = out.party.map(m => toShowdown(m, evsOn)).join("") +
             out.boxes.map(bx => bx.map(m => toShowdown(m, evsOn)).join("")).join("");
         out.total = out.party.length + out.boxes.reduce((n, bx) => n + bx.length, 0);
@@ -170,5 +203,5 @@
             if (el) el.value = null;
         });
     }
-    bind();
+    if (typeof window.jQuery === 'function') bind();   // the calc page; the docs site calls readRuptureSave itself
 })();

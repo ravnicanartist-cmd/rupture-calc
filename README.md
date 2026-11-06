@@ -6,7 +6,7 @@ A copy of [Dynamic-Calc](https://github.com/hzla/Dynamic-Calc) (by hzla) set up 
 - Hard mode: `/hard.html`
 - Rewind mode (bosses in reverse order): `/rewind.html` and `/rewind-hard.html`
 - Documentation site (every trainer, Pokédex, moves, encounters, TMs, items, with Calc links): `/docs/`
-- Boss Prep (`/docs/#prep`): pick the next boss, see every Pokémon you could have by then, who wins each 1-on-1 at the level cap, and new TMs/items nearby; star the ones you caught to check your team
+- Boss Prep (`/docs/#prep`): pick the next boss, see every Pokémon you could have by then, who wins each 1-on-1 at the level cap, and new TMs/items nearby; star the ones you caught, or read your .sav to check your real team (levels, IVs, moves), jump to your next boss and, in a Nuzlocke, see what you can still catch
 - Nuzlocke tracker: `/nuzlocke/`
 
 Click **Read .sav**, pick your `.sav` file, and your party and all 14 PC boxes load into the calc.

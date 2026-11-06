@@ -102,3 +102,11 @@ td.mu.w { background: #17291f; }
 .star.on { color: var(--accent2); }
 .tag.new { background: #2f5f8f; }
 ul.ml { margin: 6px 0 0; padding-left: 18px; } ul.ml li { margin: 0 0 4px; }
+.savebar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+.savebar.on { border-style: solid; border-color: #3d5a73; }
+.savebar .note { flex-basis: 100%; }
+.savebtn { background: var(--accent); color: var(--bg); font-weight: 600; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.savebtn.small { background: var(--panel2); color: var(--text); font-weight: 400; padding: 4px 10px; border: 1px solid var(--line); }
+.savebtn input { display: none; }
+.note { color: var(--accent2); font-size: 13px; margin: 6px 0; }
+.tag.over { background: #8a3a38; } .tag.nz-free { background: #2f6f3f; } .tag.nz-dupe, .tag.nz-used { background: #4a4f5a; } .tag.nz-gift { background: #5a4a23; }
