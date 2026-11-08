@@ -1,6 +1,6 @@
 # Emerald Rupture damage calc
 
-A copy of [Dynamic-Calc](https://github.com/hzla/Dynamic-Calc) (by hzla) set up for **Emerald Rupture 2.9**.
+A copy of [Dynamic-Calc](https://github.com/hzla/Dynamic-Calc) (by hzla) set up for **Emerald Rupture 2.9.1**.
 
 - Normal mode: `/normal.html`
 - Hard mode: `/hard.html`
