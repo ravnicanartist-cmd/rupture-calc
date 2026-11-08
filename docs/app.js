@@ -408,6 +408,7 @@
       e.items.map(x => ({ text: [x.name].concat(x.where).join(" "), cells: [{ h: `<b>${esc(x.name)}</b>` }, x.where.join("; ")] })));
     html += `<h3 class="sec">How this is worked out</h3><p class="intro">Your Pokémon are at the level cap with average IVs (15), a neutral nature, their first ability, no held item and no stat boosts.
       They can use every level-up move up to the cap, including the Lv 1 moves a wild catch often doesn't know yet: relearn those (and any TM move whose TM is in your bag) for free from the Pokémon's summary screen, on the Moves page, with START.
+      Tutor moves count once you've reached the tutor's town (the relearner offers them from then on); egg moves and the Battle Frontier tutors are post-game, so they never count here.
       Each side uses its strongest damaging move every turn (STAB, type matchups, the boss's held item and abilities such as Intimidate, Technician, Levitate and the type-absorbing ones are counted).
       The faster Pokémon hits first; you "win" if you knock it out before it knocks you out. Status moves, setup, switching, crits, accuracy, weather and the AI's choices aren't modelled,
       so treat ✓ as "a good matchup", not a guaranteed win, and check close ones in the calc. Areas reached: ${esc(e.new_areas.join(", "))}.</p>`;
@@ -453,7 +454,7 @@
         return `<li><b>${c[0] ? "✓" : "✗"} vs ${esc(m.s)}</b>: ${c[7] ? "you move first" : "it moves first"}. ${c[1] ? `Your ${esc(c[1])} does ${c[2]}–${c[3]}%` : "You have no damaging move that hits it"}${c[4] ? `; its ${esc(c[4])} does ${c[5]}–${c[6]}% to you.` : "; it can't damage you."}
           <a href="${prepCalc(e, r, j)}" target="_blank" rel="noopener">Calc ↗</a></li>`; }).join("");
       tr.insertAdjacentHTML("afterend", `<tr class="det"><td colspan="${3 + e.team.length}"><div class="cols"><div><b>Matchups</b><ul class="ml">${lines}</ul></div>
-        <div><b>Moves counted</b> <span class="muted">(${esc(r.ab)}; Lv 1 moves and TM moves can be relearned from the summary screen with START)</span><br>${r.moves.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div></div></td></tr>`);
+        <div><b>Moves counted</b> <span class="muted">(${esc(r.ab)}; Lv 1, TM and unlocked tutor moves can be relearned from the summary screen with START)</span><br>${r.moves.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div></div></td></tr>`);
     });
   }
 
